@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
@@ -96,6 +97,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let launch = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin),
+                                keyEquivalent: "")
+        launch.target = self
+        launch.state = LoginItem.isEnabled ? .on : .off
+        menu.addItem(launch)
+
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -144,6 +151,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func clearHistory() { CaptureStore.shared.clearHistory() }
 
     @objc private func openSettings() { SettingsWindowController.show() }
+
+    @objc private func toggleLaunchAtLogin() {
+        let enabled = LoginItem.set(enabled: !LoginItem.isEnabled)
+        if !enabled && SettingsStore.shared.prefs.launchAtLogin == false {
+            Notifier.show(title: "Launch at login", body: LoginItem.statusDescription)
+        }
+    }
 
     private func openImage() {
         NSApp.activate(ignoringOtherApps: true)

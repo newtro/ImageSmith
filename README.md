@@ -79,6 +79,9 @@ littering the folder.
 - **Presentation options**: padding, drop shadow, gradient/solid backgrounds,
   Retina→1× downscaling, JPEG output, capture delay, cursor inclusion.
 - **History** of the last N captures, with thumbnails, in the menu bar.
+- **Launch at login**, toggled from the menu bar or Settings → General. It reports
+  what macOS actually did, so the toggle never claims to be on when the system is
+  still waiting for approval under Login Items.
 
 ## Driving it from a script or an agent
 
@@ -88,6 +91,7 @@ Scripts/imagesmith latest        # prints the newest capture's path
 Scripts/imagesmith wait 30       # blocks until the next capture, then prints its path
 Scripts/imagesmith edit latest
 Scripts/imagesmith tap screen    # exactly what the hotkey does, double-tap rule included
+open -g imagesmith://login/enable   # or disable — launch at login
 ```
 
 `screen`/`window`/`region` always take a fresh shot, which is what a script wants.

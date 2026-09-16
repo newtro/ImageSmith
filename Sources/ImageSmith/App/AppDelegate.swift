@@ -82,6 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CaptureCoordinator.shared.handle(.pin)
         case ("hotkey", "repeat"):
             CaptureCoordinator.shared.handle(.repeatLast)
+        case ("login", "enable"):
+            LoginItem.set(enabled: true)
+        case ("login", "disable"):
+            LoginItem.set(enabled: false)
+        case ("login", "status"), ("login", ""):
+            NSLog("ImageSmith: launch at login is \(LoginItem.statusDescription)")
         case ("settings", _):
             SettingsWindowController.show()
         default:

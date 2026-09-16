@@ -252,10 +252,16 @@ private struct GeneralTab: View {
             Section("Startup") {
                 Toggle("Launch ImageSmith at login", isOn: Binding(
                     get: { store.prefs.launchAtLogin },
-                    set: { newValue in
-                        store.prefs.launchAtLogin = newValue
-                        LoginItem.set(enabled: newValue)
-                    }))
+                    set: { LoginItem.set(enabled: $0) }))
+                if SMAppService.mainApp.status == .requiresApproval {
+                    HStack {
+                        Text("macOS needs you to allow this under Login Items.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Open Login Items") {
+                            SMAppService.openSystemSettingsLoginItems()
+                        }
+                    }
+                }
             }
 
             Section("History") {
@@ -276,7 +282,22 @@ private struct GeneralTab: View {
 }
 
 enum LoginItem {
-    static func set(enabled: Bool) {
+    static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
+
+    static var statusDescription: String {
+        switch SMAppService.mainApp.status {
+        case .enabled: return "enabled"
+        case .notRegistered: return "not registered"
+        case .requiresApproval: return "needs approval in System Settings → General → Login Items"
+        case .notFound: return "not found (the app must live in /Applications)"
+        @unknown default: return "unknown"
+        }
+    }
+
+    /// Keeps the stored preference honest: if macOS refuses or needs approval,
+    /// the toggle reflects what actually happened rather than what we asked for.
+    @discardableResult
+    static func set(enabled: Bool) -> Bool {
         do {
             if enabled {
                 if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
@@ -286,5 +307,11 @@ enum LoginItem {
         } catch {
             NSLog("ImageSmith: login item update failed: \(error)")
         }
+        let actual = isEnabled
+        NSLog("ImageSmith: launch at login → \(statusDescription)")
+        if SettingsStore.shared.prefs.launchAtLogin != actual {
+            SettingsStore.shared.prefs.launchAtLogin = actual
+        }
+        return actual
     }
 }
