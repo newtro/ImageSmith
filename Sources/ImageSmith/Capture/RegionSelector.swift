@@ -105,6 +105,20 @@ private final class SelectionView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Seed the crosshair and loupe from where the pointer already is, rather
+        // than leaving them parked at the origin until the first mouse move.
+        guard let window else { return }
+        cursor = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        if mode == .region { highlightedWindow = windowRectUnderCursor() }
+        needsDisplay = true
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
@@ -119,12 +133,10 @@ private final class SelectionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        // This view is not flipped, so CGContext.draw already orients the image
+        // correctly — an extra flip here would stand the screen on its head.
         if let backdrop {
-            ctx.saveGState()
-            ctx.translateBy(x: 0, y: bounds.height)
-            ctx.scaleBy(x: 1, y: -1)
             ctx.draw(backdrop, in: CGRect(origin: .zero, size: bounds.size))
-            ctx.restoreGState()
         }
 
         let selection = currentSelection()
@@ -228,11 +240,7 @@ private final class SelectionView: NSView {
         let clip = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
         clip.setClip()
         ctx.interpolationQuality = .none
-        ctx.saveGState()
-        ctx.translateBy(x: 0, y: frame.maxY + frame.minY)
-        ctx.scaleBy(x: 1, y: -1)
         ctx.draw(crop, in: frame)
-        ctx.restoreGState()
 
         // Pixel grid
         NSColor.white.withAlphaComponent(0.18).setStroke()

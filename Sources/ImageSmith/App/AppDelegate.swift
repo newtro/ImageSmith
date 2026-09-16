@@ -67,6 +67,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CaptureCoordinator.shared.openEditorForLatest()
         case ("edit", "clipboard"):
             CaptureCoordinator.shared.editClipboardImage()
+        // `hotkey/...` goes through the same path as a real key press, so it honours
+        // the tap-again-to-edit window. `capture/...` always takes a fresh shot,
+        // which is what a script wants.
+        case ("hotkey", "fullscreen"), ("hotkey", "screen"):
+            CaptureCoordinator.shared.handle(.fullScreen)
+        case ("hotkey", "window"):
+            CaptureCoordinator.shared.handle(.window)
+        case ("hotkey", "region"):
+            CaptureCoordinator.shared.handle(.region)
+        case ("hotkey", "text"), ("hotkey", "ocr"):
+            CaptureCoordinator.shared.handle(.ocr)
+        case ("hotkey", "pin"):
+            CaptureCoordinator.shared.handle(.pin)
+        case ("hotkey", "repeat"):
+            CaptureCoordinator.shared.handle(.repeatLast)
         case ("settings", _):
             SettingsWindowController.show()
         default:

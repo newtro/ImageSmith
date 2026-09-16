@@ -87,7 +87,12 @@ Scripts/imagesmith screen        # or window | region | all | repeat | text | co
 Scripts/imagesmith latest        # prints the newest capture's path
 Scripts/imagesmith wait 30       # blocks until the next capture, then prints its path
 Scripts/imagesmith edit latest
+Scripts/imagesmith tap screen    # exactly what the hotkey does, double-tap rule included
 ```
+
+`screen`/`window`/`region` always take a fresh shot, which is what a script wants.
+`tap` goes through the hotkey path instead, so a second `tap` inside the two-second
+window opens the editor rather than capturing again.
 
 Copy `Scripts/imagesmith` somewhere on your `PATH` to use it as a bare command. It
 drives the app's `imagesmith://` URL scheme, so it works whether or not the app is

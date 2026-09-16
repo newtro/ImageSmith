@@ -44,7 +44,9 @@ actor ScreenCapturer {
     private func shareableContent() async throws -> SCShareableContent {
         guard ScreenCapturer.hasPermission() else { throw CaptureError.permissionDenied }
         do {
-            return try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            // Excluding desktop windows keeps the wallpaper out of the window list —
+            // otherwise every point on screen "hits" a full-display window.
+            return try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         } catch {
             throw CaptureError.permissionDenied
         }
@@ -56,10 +58,10 @@ actor ScreenCapturer {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         return content.windows.compactMap { w -> WindowInfo? in
             guard w.isOnScreen,
+                  w.windowLayer == 0,          // ordinary app windows only, not the Dock or menu bar
                   w.frame.width > 40, w.frame.height > 40,
                   let app = w.owningApplication,
-                  app.processID != ownPID,
-                  app.bundleIdentifier != "com.apple.dock" || (w.title ?? "").isEmpty == false
+                  app.processID != ownPID
             else { return nil }
             return WindowInfo(id: w.windowID, frame: w.frame, title: w.title ?? "",
                               appName: app.applicationName, pid: app.processID, scWindow: w)

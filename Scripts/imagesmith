@@ -2,6 +2,8 @@
 # ImageSmith CLI shim — drive captures from a script, a shell, or an AI agent.
 #
 #   imagesmith screen | window | region | all | repeat | text | color | pin
+#   imagesmith tap screen|window|region   # behaves exactly like the hotkey,
+#                                         # including tap-again-to-edit
 #   imagesmith edit [latest|clipboard]
 #   imagesmith latest            # print the path of the newest capture
 #   imagesmith wait [seconds]    # print the path of the next capture taken
@@ -15,6 +17,8 @@ newest() { ls -t "$DIR"/*.png "$DIR"/*.jpg 2>/dev/null | grep -v '/latest\.' | h
 case "${1:-screen}" in
   screen|window|region|all|alldisplays|repeat|text|ocr|color|colour|pin)
     open -g "imagesmith://capture/$1" ;;
+  tap)
+    open -g "imagesmith://hotkey/${2:-screen}" ;;
   edit)
     open -g "imagesmith://edit/${2:-latest}" ;;
   settings)
