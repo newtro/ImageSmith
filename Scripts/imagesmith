@@ -1,0 +1,37 @@
+#!/bin/bash
+# ImageSmith CLI shim — drive captures from a script, a shell, or an AI agent.
+#
+#   imagesmith screen | window | region | all | repeat | text | color | pin
+#   imagesmith edit [latest|clipboard]
+#   imagesmith latest            # print the path of the newest capture
+#   imagesmith wait [seconds]    # print the path of the next capture taken
+#   imagesmith settings
+set -euo pipefail
+
+DIR="${IMAGESMITH_DIR:-$HOME/Pictures/ImageSmith}"
+
+newest() { ls -t "$DIR"/*.png "$DIR"/*.jpg 2>/dev/null | grep -v '/latest\.' | head -1; }
+
+case "${1:-screen}" in
+  screen|window|region|all|alldisplays|repeat|text|ocr|color|colour|pin)
+    open -g "imagesmith://capture/$1" ;;
+  edit)
+    open -g "imagesmith://edit/${2:-latest}" ;;
+  settings)
+    open "imagesmith://settings/open" ;;
+  latest)
+    p="$(newest)"; [ -n "$p" ] && echo "$p" || { echo "no captures in $DIR" >&2; exit 1; } ;;
+  wait)
+    before="$(newest || true)"
+    deadline=$(( $(date +%s) + ${2:-60} ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      now="$(newest || true)"
+      if [ -n "$now" ] && [ "$now" != "$before" ]; then echo "$now"; exit 0; fi
+      sleep 0.3
+    done
+    echo "timed out waiting for a capture" >&2; exit 1 ;;
+  -h|--help|help)
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *)
+    echo "unknown command: $1" >&2; exit 2 ;;
+esac
