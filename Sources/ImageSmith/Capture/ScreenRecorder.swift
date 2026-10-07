@@ -209,11 +209,18 @@ final class ScreenRecorder: NSObject, SCStreamOutput {
             throw CaptureError.failed("The recording ended before the first frame arrived.")
         }
         let writer = WriterCompletionBox(self.writer)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            writer.value.finishWriting {
-                if writer.value.status == .completed { continuation.resume() }
-                else { continuation.resume(throwing: writer.value.error ?? CaptureError.failed("Could not finish the recording.")) }
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                writer.value.finishWriting {
+                    if writer.value.status == .completed { continuation.resume() }
+                    else { continuation.resume(throwing: writer.value.error ?? CaptureError.failed("Could not finish the recording.")) }
+                }
             }
+        } catch {
+            // A writer that failed never wrote the MP4 index, so the file
+            // cannot be played; don't leave it in the captures folder.
+            try? FileManager.default.removeItem(at: url)
+            throw error
         }
         return image
     }

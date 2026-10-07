@@ -1,8 +1,10 @@
 import AppKit
 
 /// Borderless windows refuse key status by default, which would swallow Space and
-/// Return in the picker.
-final class OverlayWindow: NSWindow {
+/// Return in the picker. A non-activating panel becomes key, and so receives Esc,
+/// even when macOS refuses to activate the app, which it often does for a
+/// menu-bar agent responding to a hotkey.
+final class OverlayWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -44,7 +46,7 @@ final class RegionSelector {
 
         NSApp.activate(ignoringOtherApps: true)
         for (screen, image) in backdrops {
-            let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless,
+            let window = OverlayWindow(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                                        backing: .buffered, defer: false)
             window.level = .screenSaver
             window.backgroundColor = .clear
@@ -52,6 +54,7 @@ final class RegionSelector {
             window.hasShadow = false
             window.ignoresMouseEvents = false
             window.isReleasedWhenClosed = false
+            window.hidesOnDeactivate = false
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
             window.acceptsMouseMovedEvents = true
 
@@ -67,7 +70,8 @@ final class RegionSelector {
             window.makeFirstResponder(view)
             windows.append(window)
         }
-        windows.first?.makeKey()
+        let pointer = NSEvent.mouseLocation
+        (windows.first { $0.frame.contains(pointer) } ?? windows.first)?.makeKey()
 
         // A safety net: Esc anywhere cancels even if focus wanders.
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
