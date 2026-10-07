@@ -6,6 +6,7 @@ enum OCRService {
     static func recognizeText(in image: NSImage) async -> String {
         guard let cg = ImageUtilities.cgImage(from: image) else { return "" }
         return await withCheckedContinuation { continuation in
+            let once = ResumeOnce(continuation)
             let request = VNRecognizeTextRequest { request, _ in
                 let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
                 // Vision's origin is bottom-left; sort top-to-bottom, then left-to-right.
@@ -17,14 +18,14 @@ enum OCRService {
                         return a.boundingBox.minX < b.boundingBox.minX
                     }
                     .compactMap { $0.topCandidates(1).first?.string }
-                continuation.resume(returning: lines.joined(separator: "\n"))
+                once.resume(lines.joined(separator: "\n"))
             }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
             let handler = VNImageRequestHandler(cgImage: cg, options: [:])
             DispatchQueue.global(qos: .userInitiated).async {
                 do { try handler.perform([request]) }
-                catch { continuation.resume(returning: "") }
+                catch { once.resume("") }
             }
         }
     }
@@ -33,16 +34,29 @@ enum OCRService {
     static func detectBarcodes(in image: NSImage) async -> [String] {
         guard let cg = ImageUtilities.cgImage(from: image) else { return [] }
         return await withCheckedContinuation { continuation in
+            let once = ResumeOnce(continuation)
             let request = VNDetectBarcodesRequest { request, _ in
                 let payloads = (request.results as? [VNBarcodeObservation])?
                     .compactMap { $0.payloadStringValue } ?? []
-                continuation.resume(returning: payloads)
+                once.resume(payloads)
             }
             let handler = VNImageRequestHandler(cgImage: cg, options: [:])
             DispatchQueue.global(qos: .userInitiated).async {
                 do { try handler.perform([request]) }
-                catch { continuation.resume(returning: []) }
+                catch { once.resume([]) }
             }
         }
+    }
+}
+
+/// Vision reports a failure through the request's completion handler *and* by
+/// throwing from perform; resuming a continuation twice is fatal.
+private final class ResumeOnce<T>: @unchecked Sendable {
+    private var continuation: CheckedContinuation<T, Never>?
+    private let lock = NSLock()
+    init(_ continuation: CheckedContinuation<T, Never>) { self.continuation = continuation }
+    func resume(_ value: T) {
+        lock.lock(); let c = continuation; continuation = nil; lock.unlock()
+        c?.resume(returning: value)
     }
 }

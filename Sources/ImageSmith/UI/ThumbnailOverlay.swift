@@ -100,6 +100,12 @@ private final class ThumbnailView: NSView, NSDraggingSource {
         path.fill()
         path.setClip()
         capture?.image.draw(in: rect.insetBy(dx: 3, dy: 3))
+        if capture?.isRecording == true {
+            NSColor.black.withAlphaComponent(0.55).setFill()
+            NSBezierPath(ovalIn: NSRect(x: rect.midX - 18, y: rect.midY - 18, width: 36, height: 36)).fill()
+            let play = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Play recording")
+            play?.draw(in: NSRect(x: rect.midX - 7, y: rect.midY - 8, width: 16, height: 16))
+        }
 
         NSColor(white: 0, alpha: 0.25).setStroke()
         let border = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)

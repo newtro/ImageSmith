@@ -5,6 +5,11 @@ protocol CanvasViewDelegate: AnyObject {
     func canvasDidChangeSelection(_ canvas: CanvasView)
     func canvasRequestsCrop(_ canvas: CanvasView, rect: CGRect)
     func canvasDidPickColor(_ canvas: CanvasView, color: NSColor)
+    /// ⌃-wheel or a trackpad pinch: `factor` multiplies the zoom, anchored at `viewPoint`
+    /// (canvas coordinates) so the pixel under the pointer stays put.
+    func canvasRequestsZoom(_ canvas: CanvasView, factor: CGFloat, at viewPoint: NSPoint)
+    /// Middle-button drag: move the visible area by `delta` in canvas points.
+    func canvasRequestsPan(_ canvas: CanvasView, by delta: NSPoint)
 }
 
 /// The interactive drawing surface. Its frame is `imageSize * zoom`; all annotation
@@ -457,6 +462,45 @@ final class CanvasView: NSView {
         let x = Int(img.x * sx), y = Int(img.y * sy)
         guard x >= 0, y >= 0, x < rep.pixelsWide, y < rep.pixelsHigh else { return nil }
         return rep.colorAt(x: x, y: y)
+    }
+
+    // MARK: Zoom and pan gestures
+
+    /// ⌃ + scroll wheel zooms about the pointer; plain scrolling still scrolls.
+    override func scrollWheel(with event: NSEvent) {
+        guard event.modifierFlags.contains(.control) else { super.scrollWheel(with: event); return }
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 40 : event.scrollingDeltaY / 3
+        guard delta != 0 else { return }
+        let factor = pow(1.25, min(1, max(-1, delta)))
+        delegate?.canvasRequestsZoom(self, factor: factor, at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func magnify(with event: NSEvent) {
+        guard event.magnification != 0 else { return }
+        delegate?.canvasRequestsZoom(self, factor: 1 + event.magnification, at: convert(event.locationInWindow, from: nil))
+    }
+
+    private var panLastWindowPoint: NSPoint?
+
+    /// Middle button (button 2) drags the view around.
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { super.otherMouseDown(with: event); return }
+        panLastWindowPoint = event.locationInWindow
+        NSCursor.closedHand.push()
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard event.buttonNumber == 2, let last = panLastWindowPoint else { super.otherMouseDragged(with: event); return }
+        let now = event.locationInWindow
+        // Window coordinates are unflipped; the canvas is flipped, so invert y.
+        delegate?.canvasRequestsPan(self, by: NSPoint(x: now.x - last.x, y: -(now.y - last.y)))
+        panLastWindowPoint = now
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2 else { super.otherMouseUp(with: event); return }
+        panLastWindowPoint = nil
+        NSCursor.pop()
     }
 
     // MARK: Keyboard

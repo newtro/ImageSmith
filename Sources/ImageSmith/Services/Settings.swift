@@ -108,12 +108,20 @@ enum ClipboardPayload: String, Codable, CaseIterable {
 /// Everything the user can tune. Persisted as JSON in UserDefaults so that adding
 /// fields later never orphans an old plist key.
 struct Preferences: Codable {
-    var fullScreenHotKey = HotKeyCombo.printScreen
-    var windowHotKey = HotKeyCombo.shiftPrintScreen
+    /// Bumped when a default changes meaning; `SettingsStore` migrates older stores.
+    static let currentSchemaVersion = 2
+    var schemaVersion = Preferences.currentSchemaVersion
+
+    /// Print Screen alone captures the front window; ⇧ Print Screen the whole screen.
+    var fullScreenHotKey = HotKeyCombo.shiftPrintScreen
+    var windowHotKey = HotKeyCombo.printScreen
     var regionHotKey = HotKeyCombo.commandPrintScreen
     var ocrHotKey = HotKeyCombo.optionPrintScreen
     var pinHotKey = HotKeyCombo.controlPrintScreen
     var repeatHotKey = HotKeyCombo.none
+    var recordScreenHotKey = HotKeyCombo.none
+    var recordWindowHotKey = HotKeyCombo.none
+    var recordRegionHotKey = HotKeyCombo.none
 
     /// Pressing a capture hotkey again inside this window re-opens the last shot
     /// in the editor instead of taking a new one.
@@ -124,7 +132,9 @@ struct Preferences: Codable {
 
     var saveDirectoryPath: String = (NSHomeDirectory() as NSString).appendingPathComponent("Pictures/ImageSmith")
     var fileNameTemplate: String = "Screenshot {date} at {time}"
+    var recordingFileNameTemplate: String = "Recording {date} at {time}"
     var maintainLatestSymlink = true
+    var recordSystemAudio = true
 
     var includeCursor = false
     var includeWindowShadow = false
@@ -148,6 +158,79 @@ struct Preferences: Codable {
 
     var launchAtLogin = false
     var historyLimit: Int = 40
+
+    /// The editor re-opens with whatever tool, colour, stroke, text size and fill the
+    /// user had last time. `nil` means "never used yet"; the defaults above then apply.
+    var rememberToolSettings = true
+    var lastTool: String?
+    var lastColorHex: String?
+    var lastStrokeWidth: Double?
+    var lastFontSize: Double?
+    var lastFillShapes: Bool?
+
+    init() {}
+
+    /// Every field is optional on read so that adding a preference never throws the
+    /// whole store away.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Preferences()
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        fullScreenHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .fullScreenHotKey) ?? d.fullScreenHotKey
+        windowHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .windowHotKey) ?? d.windowHotKey
+        regionHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .regionHotKey) ?? d.regionHotKey
+        ocrHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .ocrHotKey) ?? d.ocrHotKey
+        pinHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .pinHotKey) ?? d.pinHotKey
+        repeatHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .repeatHotKey) ?? d.repeatHotKey
+        recordScreenHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .recordScreenHotKey) ?? d.recordScreenHotKey
+        recordWindowHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .recordWindowHotKey) ?? d.recordWindowHotKey
+        recordRegionHotKey = try c.decodeIfPresent(HotKeyCombo.self, forKey: .recordRegionHotKey) ?? d.recordRegionHotKey
+        editorReopenWindow = try c.decodeIfPresent(Double.self, forKey: .editorReopenWindow) ?? d.editorReopenWindow
+        afterCapture = try c.decodeIfPresent(AfterCaptureAction.self, forKey: .afterCapture) ?? d.afterCapture
+        clipboardPayload = try c.decodeIfPresent(ClipboardPayload.self, forKey: .clipboardPayload) ?? d.clipboardPayload
+        saveDirectoryPath = try c.decodeIfPresent(String.self, forKey: .saveDirectoryPath) ?? d.saveDirectoryPath
+        fileNameTemplate = try c.decodeIfPresent(String.self, forKey: .fileNameTemplate) ?? d.fileNameTemplate
+        recordingFileNameTemplate = try c.decodeIfPresent(String.self, forKey: .recordingFileNameTemplate) ?? d.recordingFileNameTemplate
+        maintainLatestSymlink = try c.decodeIfPresent(Bool.self, forKey: .maintainLatestSymlink) ?? d.maintainLatestSymlink
+        recordSystemAudio = try c.decodeIfPresent(Bool.self, forKey: .recordSystemAudio) ?? d.recordSystemAudio
+        includeCursor = try c.decodeIfPresent(Bool.self, forKey: .includeCursor) ?? d.includeCursor
+        includeWindowShadow = try c.decodeIfPresent(Bool.self, forKey: .includeWindowShadow) ?? d.includeWindowShadow
+        windowPadding = try c.decodeIfPresent(Double.self, forKey: .windowPadding) ?? d.windowPadding
+        backgroundStyle = try c.decodeIfPresent(BackgroundStyle.self, forKey: .backgroundStyle) ?? d.backgroundStyle
+        playSound = try c.decodeIfPresent(Bool.self, forKey: .playSound) ?? d.playSound
+        showFlash = try c.decodeIfPresent(Bool.self, forKey: .showFlash) ?? d.showFlash
+        showThumbnail = try c.decodeIfPresent(Bool.self, forKey: .showThumbnail) ?? d.showThumbnail
+        thumbnailSeconds = try c.decodeIfPresent(Double.self, forKey: .thumbnailSeconds) ?? d.thumbnailSeconds
+        captureDelay = try c.decodeIfPresent(Double.self, forKey: .captureDelay) ?? d.captureDelay
+        downscaleRetina = try c.decodeIfPresent(Bool.self, forKey: .downscaleRetina) ?? d.downscaleRetina
+        jpegInsteadOfPNG = try c.decodeIfPresent(Bool.self, forKey: .jpegInsteadOfPNG) ?? d.jpegInsteadOfPNG
+        jpegQuality = try c.decodeIfPresent(Double.self, forKey: .jpegQuality) ?? d.jpegQuality
+        defaultColorHex = try c.decodeIfPresent(String.self, forKey: .defaultColorHex) ?? d.defaultColorHex
+        defaultStrokeWidth = try c.decodeIfPresent(Double.self, forKey: .defaultStrokeWidth) ?? d.defaultStrokeWidth
+        defaultFontSize = try c.decodeIfPresent(Double.self, forKey: .defaultFontSize) ?? d.defaultFontSize
+        copyAndCloseOnEnter = try c.decodeIfPresent(Bool.self, forKey: .copyAndCloseOnEnter) ?? d.copyAndCloseOnEnter
+        launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? d.launchAtLogin
+        historyLimit = try c.decodeIfPresent(Int.self, forKey: .historyLimit) ?? d.historyLimit
+        rememberToolSettings = try c.decodeIfPresent(Bool.self, forKey: .rememberToolSettings) ?? d.rememberToolSettings
+        lastTool = try c.decodeIfPresent(String.self, forKey: .lastTool)
+        lastColorHex = try c.decodeIfPresent(String.self, forKey: .lastColorHex)
+        lastStrokeWidth = try c.decodeIfPresent(Double.self, forKey: .lastStrokeWidth)
+        lastFontSize = try c.decodeIfPresent(Double.self, forKey: .lastFontSize)
+        lastFillShapes = try c.decodeIfPresent(Bool.self, forKey: .lastFillShapes)
+    }
+
+    /// Schema 1 shipped Print Screen = screen, ⇧ Print Screen = window. Schema 2 swaps
+    /// them, but only for stores still on those exact defaults so custom bindings survive.
+    mutating func migrate() {
+        if schemaVersion < 2 {
+            if fullScreenHotKey == .printScreen && windowHotKey == .shiftPrintScreen {
+                fullScreenHotKey = .shiftPrintScreen
+                windowHotKey = .printScreen
+            }
+            schemaVersion = 2
+        }
+        schemaVersion = Preferences.currentSchemaVersion
+    }
 }
 
 enum BackgroundStyle: String, Codable, CaseIterable {
@@ -178,8 +261,12 @@ final class SettingsStore: ObservableObject {
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: key),
-           let decoded = try? JSONDecoder().decode(Preferences.self, from: data) {
+           var decoded = try? JSONDecoder().decode(Preferences.self, from: data) {
+            let before = decoded.schemaVersion
+            decoded.migrate()
             prefs = decoded
+            loading = false
+            if before != decoded.schemaVersion { save() }
         } else {
             prefs = Preferences()
         }

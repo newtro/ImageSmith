@@ -5,6 +5,7 @@
 #   imagesmith tap screen|window|region   # behaves exactly like the hotkey,
 #                                         # including tap-again-to-edit
 #   imagesmith edit [latest|clipboard]
+#   imagesmith record screen|window|region|stop
 #   imagesmith latest            # print the path of the newest capture
 #   imagesmith wait [seconds]    # print the path of the next capture taken
 #   imagesmith settings
@@ -12,13 +13,15 @@ set -euo pipefail
 
 DIR="${IMAGESMITH_DIR:-$HOME/Pictures/ImageSmith}"
 
-newest() { ls -t "$DIR"/*.png "$DIR"/*.jpg 2>/dev/null | grep -v '/latest\.' | head -1; }
+newest() { { ls -t "$DIR"/*.png "$DIR"/*.jpg "$DIR"/*.mp4 2>/dev/null || true; } | grep -v '/latest\.' | head -1; }
 
 case "${1:-screen}" in
   screen|window|region|all|alldisplays|repeat|text|ocr|color|colour|pin)
     open -g "imagesmith://capture/$1" ;;
   tap)
     open -g "imagesmith://hotkey/${2:-screen}" ;;
+  record)
+    open -g "imagesmith://record/${2:-screen}" ;;
   edit)
     open -g "imagesmith://edit/${2:-latest}" ;;
   settings)

@@ -33,6 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard CaptureCoordinator.shared.isRecording else { return .terminateNow }
+        CaptureCoordinator.shared.stopRecording {
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     // MARK: URL scheme — imagesmith://capture/region, imagesmith://edit/latest, …
     // This is what the `imagesmith` CLI shim drives, so scripts and agents can
     // trigger a capture without touching the keyboard.
@@ -63,10 +71,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CaptureCoordinator.shared.pickColor()
         case ("capture", "pin"):
             CaptureCoordinator.shared.handle(.pin)
+        case ("record", "screen"), ("record", ""):
+            CaptureCoordinator.shared.toggleRecording(.screen)
+        case ("record", "window"):
+            CaptureCoordinator.shared.toggleRecording(.frontWindow)
+        case ("record", "region"):
+            CaptureCoordinator.shared.toggleRecording(.region)
+        case ("record", "stop"):
+            CaptureCoordinator.shared.stopRecording()
         case ("edit", "latest"), ("edit", ""):
             CaptureCoordinator.shared.openEditorForLatest()
         case ("edit", "clipboard"):
             CaptureCoordinator.shared.editClipboardImage()
+        case ("open", "movie"), ("open", "recording"):
+            if let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "path" })?.value {
+                CaptureCoordinator.shared.openVideoFile(URL(fileURLWithPath: path))
+            }
         // `hotkey/...` goes through the same path as a real key press, so it honours
         // the tap-again-to-edit window. `capture/...` always takes a fresh shot,
         // which is what a script wants.

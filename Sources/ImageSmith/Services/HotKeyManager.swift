@@ -11,6 +11,9 @@ final class HotKeyManager {
         case ocr = 4
         case pin = 5
         case repeatLast = 6
+        case recordScreen = 7
+        case recordWindow = 8
+        case recordRegion = 9
     }
 
     static let shared = HotKeyManager()
@@ -37,6 +40,9 @@ final class HotKeyManager {
         register(.ocr, p.ocrHotKey)
         register(.pin, p.pinHotKey)
         register(.repeatLast, p.repeatHotKey)
+        register(.recordScreen, p.recordScreenHotKey)
+        register(.recordWindow, p.recordWindowHotKey)
+        register(.recordRegion, p.recordRegionHotKey)
     }
 
     /// Temporarily drop registrations so a shortcut recorder can see the raw keys.

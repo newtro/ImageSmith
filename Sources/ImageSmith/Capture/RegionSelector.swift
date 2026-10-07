@@ -35,7 +35,9 @@ final class RegionSelector {
                backdrops: [(NSScreen, CGImage)],
                windowFrames: [(CGRect, String)] = [],
                completion: @escaping (Result?) -> Void) {
-        guard !isActive else { return }
+        // Callers hold state (e.g. the coordinator's busy flag) until the
+        // completion runs, so a refused second picker must still complete.
+        guard !isActive else { completion(nil); return }
         isActive = true
         self.completion = completion
         self.windowFrames = windowFrames
@@ -80,7 +82,11 @@ final class RegionSelector {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         windows.forEach { $0.orderOut(nil) }
+        // finish usually runs inside one of these windows' own event handling;
+        // keep them alive until that call stack unwinds.
+        let closing = windows
         windows.removeAll()
+        DispatchQueue.main.async { _ = closing }
         let c = completion
         completion = nil
         c?(result)
@@ -104,6 +110,9 @@ private final class SelectionView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
+    // Activation from a background agent can be refused, so the first click
+    // must start the drag rather than be eaten as an activation click.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -141,14 +150,16 @@ private final class SelectionView: NSView {
 
         let selection = currentSelection()
         NSColor.black.withAlphaComponent(0.42).setFill()
+        // Even-odd fill punches the hole without reversing the inner path;
+        // NSBezierPath.reversed raises on degenerate rects and took the app down.
         if let selection {
             let path = NSBezierPath(rect: bounds)
-            path.append(NSBezierPath(rect: selection).reversed)
+            path.append(NSBezierPath(rect: selection))
             path.windingRule = .evenOdd
             path.fill()
         } else if let hl = highlightedWindow {
             let path = NSBezierPath(rect: bounds)
-            path.append(NSBezierPath(rect: hl).reversed)
+            path.append(NSBezierPath(rect: hl))
             path.windingRule = .evenOdd
             path.fill()
             NSColor.controlAccentColor.setStroke()
@@ -302,15 +313,18 @@ private final class SelectionView: NSView {
     }
 
     /// The window under the cursor, expressed in this view's coordinates.
+    /// Nil when the pointer is on another display: each display has its own
+    /// overlay, and a window elsewhere would clip to a null rect here.
     private func windowRectUnderCursor() -> NSRect? {
-        guard let screen = screenRef else { return nil }
+        guard let screen = screenRef, bounds.contains(cursor) else { return nil }
         let globalCocoa = NSPoint(x: screen.frame.minX + cursor.x, y: screen.frame.minY + cursor.y)
         let cgPoint = ScreenGeometry.cgPoint(fromCocoa: globalCocoa)
         guard let match = windowFrames.first(where: { $0.0.contains(cgPoint) }) else { return nil }
         let cocoa = ScreenGeometry.cocoaRect(fromCG: match.0)
-        return NSRect(x: cocoa.minX - screen.frame.minX, y: cocoa.minY - screen.frame.minY,
+        let local = NSRect(x: cocoa.minX - screen.frame.minX, y: cocoa.minY - screen.frame.minY,
                       width: cocoa.width, height: cocoa.height)
             .intersection(bounds)
+        return local.isNull || local.width < 1 || local.height < 1 ? nil : local
     }
 
     // MARK: Events
@@ -321,6 +335,10 @@ private final class SelectionView: NSView {
             highlightedWindow = windowRectUnderCursor()
         }
         needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if dragStart == nil { highlightedWindow = nil; needsDisplay = true }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -365,7 +383,15 @@ private final class SelectionView: NSView {
         }
     }
 
-    private func deliver(_ viewRect: NSRect) {
+    private func deliver(_ rect: NSRect) {
+        // A drag can run past the display edge; recording needs a source rect
+        // that lies on this display.
+        let viewRect = rect.intersection(bounds)
+        guard !viewRect.isNull, viewRect.width >= 1, viewRect.height >= 1 else {
+            dragStart = nil; dragCurrent = nil; hasDragged = false
+            needsDisplay = true
+            return
+        }
         guard let backdrop, let screen = screenRef else { owner?.finish(nil); return }
         let scale = screen.backingScaleFactor
         let pixelRect = CGRect(x: viewRect.minX * scale,

@@ -37,6 +37,9 @@ final class EditorWindowController: NSWindowController {
     private var fillToggle: NSButton!
     private var fontSizeSlider: NSSlider!
     private let editorUndoManager = UndoManager()
+    /// While true the image tracks the window: every resize re-fits. Any manual zoom
+    /// (buttons, ⌘±, ⌃-wheel, pinch) switches to a fixed zoom until "Fit" is pressed.
+    private var fitToWindow = true
 
     var onClose: ((EditorWindowController) -> Void)?
 
@@ -81,10 +84,13 @@ final class EditorWindowController: NSWindowController {
 
         canvas = CanvasView(image: capture.image)
         canvas.delegate = self
-        canvas.currentColor = NSColor(hex: prefs.defaultColorHex) ?? .systemRed
-        canvas.currentStrokeWidth = CGFloat(prefs.defaultStrokeWidth)
-        canvas.currentFontSize = CGFloat(prefs.defaultFontSize)
-        canvas.currentTool = .arrow
+        let remembered = prefs.rememberToolSettings
+        canvas.currentColor = NSColor(hex: (remembered ? prefs.lastColorHex : nil) ?? prefs.defaultColorHex) ?? .systemRed
+        canvas.currentStrokeWidth = CGFloat((remembered ? prefs.lastStrokeWidth : nil) ?? prefs.defaultStrokeWidth)
+        canvas.currentFontSize = CGFloat((remembered ? prefs.lastFontSize : nil) ?? prefs.defaultFontSize)
+        canvas.fillShapes = (remembered ? prefs.lastFillShapes : nil) ?? false
+        canvas.currentTool = ToolKind(rawValue: (remembered ? prefs.lastTool : nil) ?? "") ?? .arrow
+        if canvas.currentTool == .crop { canvas.currentTool = .arrow }   // a crop in progress is never a sensible starting tool
 
         scrollView = NSScrollView()
         scrollView.contentView = CenteringClipView()
@@ -171,14 +177,14 @@ final class EditorWindowController: NSWindowController {
                                      action: #selector(chooseCustomColor))
         colors.addArrangedSubview(customColor)
 
-        widthSlider = NSSlider(value: SettingsStore.shared.prefs.defaultStrokeWidth,
+        widthSlider = NSSlider(value: Double(canvas.currentStrokeWidth),
                                minValue: 1, maxValue: 24,
                                target: self, action: #selector(widthChanged(_:)))
         widthSlider.toolTip = "Stroke width ([ and ])"
         widthSlider.translatesAutoresizingMaskIntoConstraints = false
         widthSlider.widthAnchor.constraint(equalToConstant: 80).isActive = true
 
-        fontSizeSlider = NSSlider(value: SettingsStore.shared.prefs.defaultFontSize,
+        fontSizeSlider = NSSlider(value: Double(canvas.currentFontSize),
                                   minValue: 10, maxValue: 96,
                                   target: self, action: #selector(fontSizeChanged(_:)))
         fontSizeSlider.toolTip = "Text / badge size"
@@ -187,6 +193,7 @@ final class EditorWindowController: NSWindowController {
 
         fillToggle = NSButton(checkboxWithTitle: "Fill", target: self, action: #selector(fillToggled(_:)))
         fillToggle.toolTip = "Fill shapes (F)"
+        fillToggle.state = canvas.fillShapes ? .on : .off
 
         let actions = NSStackView()
         actions.orientation = .horizontal
@@ -321,12 +328,27 @@ final class EditorWindowController: NSWindowController {
         let tool = Self.toolOrder[sender.tag]
         canvas.currentTool = tool
         refreshToolButtons()
+        rememberToolSettings()
     }
 
     @objc private func colorButtonTapped(_ sender: NSButton) {
         canvas.currentColor = Self.palette[sender.tag]
         canvas.applyStyleToSelection()
         refreshColorButtons()
+        rememberToolSettings()
+    }
+
+    /// Persist the current tool, colour, stroke, text size and fill so the next
+    /// capture opens the editor exactly as it was left.
+    private func rememberToolSettings() {
+        guard SettingsStore.shared.prefs.rememberToolSettings else { return }
+        let tool = canvas.currentTool == .crop ? nil : canvas.currentTool.rawValue
+        let color = canvas.currentColor.hexString, width = Double(canvas.currentStrokeWidth)
+        let font = Double(canvas.currentFontSize), fill = canvas.fillShapes
+        SettingsStore.shared.update { p in
+            if let tool { p.lastTool = tool }
+            p.lastColorHex = color; p.lastStrokeWidth = width; p.lastFontSize = font; p.lastFillShapes = fill
+        }
     }
 
     @objc private func chooseCustomColor() {
@@ -341,36 +363,68 @@ final class EditorWindowController: NSWindowController {
         canvas.currentColor = sender.color
         canvas.applyStyleToSelection()
         refreshColorButtons()
+        rememberToolSettings()
     }
 
     @objc private func widthChanged(_ sender: NSSlider) {
         canvas.currentStrokeWidth = CGFloat(sender.doubleValue)
         canvas.applyStyleToSelection()
+        rememberToolSettings()
     }
 
     @objc private func fontSizeChanged(_ sender: NSSlider) {
         canvas.currentFontSize = CGFloat(sender.doubleValue)
         canvas.applyStyleToSelection()
+        rememberToolSettings()
     }
 
     @objc private func fillToggled(_ sender: NSButton) {
         canvas.fillShapes = sender.state == .on
         canvas.applyStyleToSelection()
+        rememberToolSettings()
     }
 
     @objc private func undoAction() { editorUndoManager.undo(); canvas.needsDisplay = true; updateStatus() }
     @objc private func redoAction() { editorUndoManager.redo(); canvas.needsDisplay = true; updateStatus() }
     @objc private func clearAll() { canvas.clearAll() }
 
-    @objc func zoomIn() { setZoom(canvas.zoom * 1.25) }
-    @objc func zoomOut() { setZoom(canvas.zoom / 1.25) }
+    @objc func zoomIn() { zoom(by: 1.25, anchoredAt: visibleCenter()) }
+    @objc func zoomOut() { zoom(by: 1 / 1.25, anchoredAt: visibleCenter()) }
 
+    /// Fit the whole image in the visible area and keep it fitted while the window resizes.
     @objc func zoomToFit() {
+        fitToWindow = true
+        refitIfNeeded()
+    }
+
+    private func refitIfNeeded() {
+        guard fitToWindow else { return }
         let visible = scrollView.contentView.bounds.size
         guard visible.width > 1, visible.height > 1 else { return }
         let size = canvas.imageSize
-        let z = min(1.0, min(visible.width / size.width, visible.height / size.height))
+        let z = min(visible.width / size.width, visible.height / size.height)
         setZoom(z)
+    }
+
+    private func visibleCenter() -> NSPoint {
+        let b = scrollView.contentView.bounds
+        return NSPoint(x: b.midX, y: b.midY)
+    }
+
+    /// Multiply the zoom by `factor`, keeping the canvas point `anchor` under the same
+    /// window position. Leaves fit-to-window mode.
+    private func zoom(by factor: CGFloat, anchoredAt anchor: NSPoint) {
+        fitToWindow = false
+        let clip = scrollView.contentView
+        let old = canvas.zoom
+        let new = max(0.1, min(8, old * factor))
+        guard new != old else { return }
+        let imagePoint = canvas.imagePoint(from: anchor)
+        let offsetInVisible = NSPoint(x: anchor.x - clip.bounds.origin.x, y: anchor.y - clip.bounds.origin.y)
+        setZoom(new)
+        let newAnchor = canvas.viewPoint(from: imagePoint)
+        clip.scroll(to: NSPoint(x: newAnchor.x - offsetInVisible.x, y: newAnchor.y - offsetInVisible.y))
+        scrollView.reflectScrolledClipView(clip)
     }
 
     private func setZoom(_ z: CGFloat) {
@@ -484,6 +538,7 @@ final class EditorWindowController: NSWindowController {
         if let tool = Self.toolOrder.first(where: { $0.shortcut.lowercased() == chars }) {
             canvas.currentTool = tool
             refreshToolButtons()
+            rememberToolSettings()
             return true
         }
         return false
@@ -501,6 +556,18 @@ extension EditorWindowController: CanvasViewDelegate {
     func canvasDidPickColor(_ canvas: CanvasView, color: NSColor) {
         canvas.currentColor = color
         refreshColorButtons()
+        rememberToolSettings()
+    }
+
+    func canvasRequestsZoom(_ canvas: CanvasView, factor: CGFloat, at viewPoint: NSPoint) {
+        zoom(by: factor, anchoredAt: viewPoint)
+    }
+
+    func canvasRequestsPan(_ canvas: CanvasView, by delta: NSPoint) {
+        let clip = scrollView.contentView
+        let origin = clip.bounds.origin
+        clip.scroll(to: NSPoint(x: origin.x - delta.x, y: origin.y - delta.y))
+        scrollView.reflectScrolledClipView(clip)
     }
 
     func canvasRequestsCrop(_ canvas: CanvasView, rect: CGRect) {
@@ -533,7 +600,8 @@ extension EditorWindowController: CanvasViewDelegate {
 extension EditorWindowController: NSWindowDelegate {
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { editorUndoManager }
     func windowWillClose(_ notification: Notification) { onClose?(self) }
-    func windowDidResize(_ notification: Notification) { updateStatus() }
+    /// The image follows the window while in fit mode; a manual zoom pins it instead.
+    func windowDidResize(_ notification: Notification) { refitIfNeeded(); updateStatus() }
 }
 
 extension NSColor {

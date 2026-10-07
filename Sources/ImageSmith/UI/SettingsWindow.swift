@@ -60,6 +60,9 @@ private struct ShortcutsTab: View {
                 row("Capture screen", $store.prefs.fullScreenHotKey)
                 row("Capture front window", $store.prefs.windowHotKey)
                 row("Capture region", $store.prefs.regionHotKey)
+                row("Record screen / stop", $store.prefs.recordScreenHotKey)
+                row("Record front window / stop", $store.prefs.recordWindowHotKey)
+                row("Record region / stop", $store.prefs.recordRegionHotKey)
                 row("Capture text (OCR)", $store.prefs.ocrHotKey)
                 row("Capture and pin", $store.prefs.pinHotKey)
                 row("Repeat last capture", $store.prefs.repeatHotKey)
@@ -137,6 +140,12 @@ private struct CaptureTab: View {
                     Text("\(store.prefs.captureDelay, specifier: "%.1f")s").monospacedDigit()
                 }
             }
+
+            Section("Recording") {
+                Toggle("Include system audio", isOn: $store.prefs.recordSystemAudio)
+                Text("Recordings are saved as MP4 files in the same folder. Use the floating Stop button or press a recording shortcut again to finish.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -156,6 +165,7 @@ private struct OutputTab: View {
                     }
                 }
                 TextField("File name", text: $store.prefs.fileNameTemplate)
+                TextField("Recording file name", text: $store.prefs.recordingFileNameTemplate)
                 Text("Tokens: {date} {time} {year} {month} {day} {hour} {minute} {second} {epoch}")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Keep a `latest.png` symlink pointing at the newest capture",
@@ -196,6 +206,9 @@ private struct EditorTab: View {
     var body: some View {
         Form {
             Section("Defaults") {
+                Toggle("Remember tool settings between captures", isOn: $store.prefs.rememberToolSettings)
+                Text("When on, the editor reopens with the last tool, colour, stroke, text size and fill; the defaults below apply only until you change something.")
+                    .font(.caption).foregroundStyle(.secondary)
                 ColorPicker("Annotation colour", selection: Binding(
                     get: { Color(nsColor: NSColor(hex: store.prefs.defaultColorHex) ?? .systemRed) },
                     set: { store.prefs.defaultColorHex = NSColor($0).hexString }))

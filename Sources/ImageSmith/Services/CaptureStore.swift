@@ -7,12 +7,15 @@ final class Capture: Identifiable {
     var image: NSImage
     var fileURL: URL?
     let sourceDescription: String
+    let isRecording: Bool
 
-    init(image: NSImage, sourceDescription: String, date: Date = Date(), fileURL: URL? = nil) {
+    init(image: NSImage, sourceDescription: String, date: Date = Date(), fileURL: URL? = nil,
+         isRecording: Bool = false) {
         self.image = image
         self.sourceDescription = sourceDescription
         self.date = date
         self.fileURL = fileURL
+        self.isRecording = isRecording
     }
 
     var pixelSize: NSSize {
@@ -37,7 +40,7 @@ final class CaptureStore {
         history.insert(capture, at: 0)
         let limit = max(1, SettingsStore.shared.prefs.historyLimit)
         if history.count > limit { history.removeLast(history.count - limit) }
-        lastCaptureDate = capture.date
+        lastCaptureDate = capture.isRecording ? nil : capture.date
         NotificationCenter.default.post(name: CaptureStore.didChange, object: nil)
     }
 
@@ -58,6 +61,7 @@ final class CaptureStore {
 
     @discardableResult
     func writeToDisk(_ capture: Capture) -> URL? {
+        guard !capture.isRecording else { return capture.fileURL }
         let prefs = SettingsStore.shared.prefs
         let dir = SettingsStore.shared.saveDirectory
         do {
@@ -112,6 +116,26 @@ final class CaptureStore {
         try? fm.createSymbolicLink(at: dir.appendingPathComponent("latest.\(ext)"), withDestinationURL: url)
     }
 
+    func recordingURL(date: Date) throws -> URL {
+        let dir = SettingsStore.shared.saveDirectory
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let base = expand(template: SettingsStore.shared.prefs.recordingFileNameTemplate, date: date)
+        var url = dir.appendingPathComponent("\(base).mp4")
+        var counter = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent("\(base) (\(counter)).mp4")
+            counter += 1
+        }
+        return url
+    }
+
+    func updateLatestRecording(_ url: URL) {
+        guard SettingsStore.shared.prefs.maintainLatestSymlink else { return }
+        let link = SettingsStore.shared.saveDirectory.appendingPathComponent("latest.mp4")
+        try? FileManager.default.removeItem(at: link)
+        try? FileManager.default.createSymbolicLink(at: link, withDestinationURL: url)
+    }
+
     func expand(template: String, date: Date) -> String {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
@@ -142,6 +166,13 @@ final class CaptureStore {
         let mode = payload ?? SettingsStore.shared.prefs.clipboardPayload
         let pb = NSPasteboard.general
         pb.clearContents()
+
+        if capture.isRecording {
+            guard let url = capture.fileURL else { return }
+            if mode == .pathOnly { pb.setString(url.path, forType: .string) }
+            else { pb.writeObjects([url as NSURL]) }
+            return
+        }
 
         switch mode {
         case .image:
@@ -175,6 +206,7 @@ final class CaptureStore {
         guard let url = capture.fileURL else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(markdown ? "![screenshot](\(url.path))" : url.path, forType: .string)
+        let markup = capture.isRecording ? "[recording](\(url.path))" : "![screenshot](\(url.path))"
+        pb.setString(markdown ? markup : url.path, forType: .string)
     }
 }

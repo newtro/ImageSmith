@@ -3,6 +3,11 @@
 A native macOS screen-capture and markup app, built for the "screenshot it, mark it
 up, hand it to an agent" loop.
 
+ImageSmith also records a display, the frontmost window, or a selected region to
+MP4. Start from the menu bar or assign shortcuts under Settings → Shortcuts. A
+floating timer and Stop button stay visible while recording; pressing any recording
+shortcut again also stops. System audio and cursor capture are configurable.
+
 It lives in the menu bar, has no Dock icon until you open the editor, and every
 capture lands on the clipboard and on disk at the same time.
 
@@ -10,8 +15,8 @@ capture lands on the clipboard and on disk at the same time.
 
 | Key | What happens |
 | --- | --- |
-| `Print Screen` (F13) | Captures the display under the pointer |
-| `⇧ Print Screen` | Captures the frontmost window |
+| `Print Screen` (F13) | Captures the frontmost window |
+| `⇧ Print Screen` | Captures the display under the pointer |
 | `⌘ Print Screen` | Drag-select a region |
 | **Any of them again within 2 seconds** | Opens the shot you just took in the markup editor |
 | `⌥ Print Screen` | Select an area and copy its *text* (OCR) instead of pixels |
@@ -57,8 +62,13 @@ F fill     [ / ]  stroke width     ⇧-drag constrains to 15° / squares
 ⌘Z undo    ⇧⌘Z redo   ⌘D duplicate   ⌫ delete   arrows nudge (⇧ = 10px)
 ↩ copy & close   ⌘S save as   ⇧⌘C copy path   ⇧⌘M copy markdown
 ⇧⌘O OCR to clipboard   ⌘P pin on top   ⌘0 fit   ⌘+ / ⌘- zoom
+⌃-wheel / pinch zooms at the pointer   middle-button drag pans
 ⌘-click temporarily switches to the select tool
 ```
+
+The image fits the window and keeps fitting as you resize it, until you zoom by hand;
+**Fit** (⌘0) hands control back. The editor also reopens with the tool, colour, stroke,
+text size and fill you last used (Settings → Editor → *Remember tool settings*).
 
 Marks stay editable — select, move, resize, restyle or delete any of them until you
 copy. Re-saving an edited capture overwrites the file it came from rather than
@@ -79,6 +89,9 @@ littering the folder.
 - **Presentation options**: padding, drop shadow, gradient/solid backgrounds,
   Retina→1× downscaling, JPEG output, capture delay, cursor inclusion.
 - **History** of the last N captures, with thumbnails, in the menu bar.
+- **Screen recordings** share the save folder, clipboard, preview thumbnail,
+  recent history, file-path actions and CLI. Click a recording preview to edit it.
+  `latest.mp4` points to the newest recording when latest links are enabled.
 - **Launch at login**, toggled from the menu bar or Settings → General. It reports
   what macOS actually did, so the toggle never claims to be on when the system is
   still waiting for approval under Login Items.
@@ -90,6 +103,7 @@ Scripts/imagesmith screen        # or window | region | all | repeat | text | co
 Scripts/imagesmith latest        # prints the newest capture's path
 Scripts/imagesmith wait 30       # blocks until the next capture, then prints its path
 Scripts/imagesmith edit latest
+Scripts/imagesmith record screen    # or window | region; run record stop to finish
 Scripts/imagesmith tap screen    # exactly what the hotkey does, double-tap rule included
 open -g imagesmith://login/enable   # or disable — launch at login
 ```
@@ -101,6 +115,13 @@ window opens the editor rather than capturing again.
 Copy `Scripts/imagesmith` somewhere on your `PATH` to use it as a bare command. It
 drives the app's `imagesmith://` URL scheme, so it works whether or not the app is
 already running.
+
+The recording editor plays MP4s, lets you select a range by dragging on the
+timeline, trim to that range, remove it from the middle, undo/redo edits, mute
+audio, split at the playhead, change playback speed, and export a new MP4.
+The source recording stays intact. Use **Open
+Recording…** from the menu bar to edit an existing movie. Still-image markup
+tools apply to screenshots.
 
 ## Build and install
 

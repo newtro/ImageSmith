@@ -1,5 +1,6 @@
 import AppKit
 import ServiceManagement
+import UniformTypeIdentifiers
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
@@ -41,6 +42,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let prefs = SettingsStore.shared.prefs
 
+        if CaptureCoordinator.shared.isRecording {
+            add(menu, CaptureCoordinator.shared.isFinishingRecording ? "Finishing Recording…" : "Stop Recording",
+                nil, enabled: !CaptureCoordinator.shared.isFinishingRecording) {
+                CaptureCoordinator.shared.stopRecording()
+            }
+            menu.addItem(.separator())
+        } else {
+            add(menu, "Record Screen", prefs.recordScreenHotKey) { CaptureCoordinator.shared.toggleRecording(.screen) }
+            add(menu, "Record Front Window", prefs.recordWindowHotKey) { CaptureCoordinator.shared.toggleRecording(.frontWindow) }
+            add(menu, "Record Region…", prefs.recordRegionHotKey) { CaptureCoordinator.shared.toggleRecording(.region) }
+            menu.addItem(.separator())
+        }
+
         add(menu, "Capture Screen", prefs.fullScreenHotKey) { CaptureCoordinator.shared.capture(.screen) }
         add(menu, "Capture Front Window", prefs.windowHotKey) { CaptureCoordinator.shared.capture(.frontWindow) }
         add(menu, "Capture Region…", prefs.regionHotKey) { CaptureCoordinator.shared.capture(.region) }
@@ -54,11 +68,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         add(menu, "Close All Pinned Images", nil) { PinnedWindowController.closeAll() }
 
         menu.addItem(.separator())
-        add(menu, "Edit Last Capture", nil, enabled: CaptureStore.shared.latest != nil) {
+        add(menu, "Open Last Capture", nil, enabled: CaptureStore.shared.latest != nil) {
             CaptureCoordinator.shared.openEditorForLatest()
         }
         add(menu, "Edit Image on Clipboard", nil) { CaptureCoordinator.shared.editClipboardImage() }
         add(menu, "Open Image…", nil) { self.openImage() }
+        add(menu, "Open Recording…", nil) { self.openRecording() }
 
         if !CaptureStore.shared.history.isEmpty {
             let recent = NSMenu()
@@ -166,6 +181,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
             CaptureCoordinator.shared.openImageFile(url)
+        }
+    }
+
+    private func openRecording() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.movie]
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            CaptureCoordinator.shared.openVideoFile(url)
         }
     }
 }

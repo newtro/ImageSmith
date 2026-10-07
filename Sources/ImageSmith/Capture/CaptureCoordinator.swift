@@ -15,9 +15,17 @@ final class CaptureCoordinator {
     static let shared = CaptureCoordinator()
 
     private var editors: [EditorWindowController] = []
+    private var videoEditors: [VideoEditorWindowController] = []
     private var lastMode: CaptureMode = .screen
     private var lastRegionRect: CGRect?
     private var busy = false
+    private var recorder: ScreenRecorder?
+    private var recordingFinishing = false
+    private var stopCompletions: [() -> Void] = []
+    private var recordingControl: RecordingControl?
+    private var recordingSource = "Screen"
+    var isRecording: Bool { recorder != nil || recordingFinishing }
+    var isFinishingRecording: Bool { recordingFinishing }
 
     private init() {}
 
@@ -40,6 +48,9 @@ final class CaptureCoordinator {
             captureAndPin()
         case .repeatLast:
             capture(lastRegionRect != nil ? .lastRegion : lastMode)
+        case .recordScreen: toggleRecording(.screen)
+        case .recordWindow: toggleRecording(.frontWindow)
+        case .recordRegion: toggleRecording(.region)
         }
     }
 
@@ -77,6 +88,105 @@ final class CaptureCoordinator {
         ScreenCapturer.requestPermission()
         Notifier.error(CaptureError.permissionDenied)
         return false
+    }
+
+    func toggleRecording(_ mode: CaptureMode) {
+        if isRecording { stopRecording(); return }
+        guard !busy, !recordingFinishing, ensurePermission() else { return }
+        busy = true
+        let delay = SettingsStore.shared.prefs.captureDelay
+        Task { @MainActor [self] in
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            do {
+                if mode == .region {
+                    let shots = await backdrops()
+                    guard !shots.isEmpty else { busy = false; return }
+                    RegionSelector.shared.begin(mode: .region, backdrops: shots,
+                                                windowFrames: await windowFrames()) { [self] result in
+                        guard let result else { self.busy = false; return }
+                        self.lastRegionRect = result.rect
+                        Task { @MainActor in
+                            await self.beginRecording(.region(ScreenGeometry.displayID(of: result.screen),
+                                                              result.screen.backingScaleFactor, result.rect,
+                                                              screenFrame: result.screen.frame),
+                                                      source: "Region")
+                        }
+                    }
+                } else if mode == .frontWindow {
+                    let info = try await ScreenCapturer.shared.frontmostWindow()
+                    let screen = NSScreen.screens.first(where: { $0.frame.intersects(ScreenGeometry.cocoaRect(fromCG: info.frame)) })
+                        ?? NSScreen.main!
+                    await beginRecording(.window(info, screen.backingScaleFactor),
+                                         source: info.title.isEmpty ? info.appName : "\(info.appName) — \(info.title)")
+                } else {
+                    let screen = ScreenGeometry.screen(containing: NSEvent.mouseLocation) ?? NSScreen.main!
+                    await beginRecording(.display(ScreenGeometry.displayID(of: screen), screen.backingScaleFactor),
+                                         source: "Screen")
+                }
+            } catch {
+                busy = false
+                Notifier.error(error)
+            }
+        }
+    }
+
+    private func beginRecording(_ target: RecordingTarget, source: String) async {
+        let date = Date()
+        do {
+            let url = try CaptureStore.shared.recordingURL(date: date)
+            let prefs = SettingsStore.shared.prefs
+            let options = RecordingOptions(includeCursor: prefs.includeCursor,
+                                           systemAudio: prefs.recordSystemAudio,
+                                           downscaleRetina: prefs.downscaleRetina,
+                                           includeWindowShadow: prefs.includeWindowShadow)
+            let recorder = try await ScreenRecorder.start(target: target, url: url, options: options)
+            recorder.onUnexpectedStop = { [weak self] error in
+                self?.stopRecording()
+                Notifier.show(title: "Recording interrupted", body: error.localizedDescription)
+            }
+            self.recorder = recorder
+            recordingSource = source
+            recordingControl = RecordingControl { [weak self] in self?.stopRecording() }
+            NotificationCenter.default.post(name: CaptureStore.didChange, object: nil)
+        } catch {
+            Notifier.error(error)
+        }
+        busy = false
+    }
+
+    func stopRecording(completion: (() -> Void)? = nil) {
+        if let completion { stopCompletions.append(completion) }
+        if recordingFinishing { return }
+        guard let recorder else {
+            stopCompletions.forEach { $0() }
+            stopCompletions.removeAll()
+            return
+        }
+        recordingFinishing = true
+        self.recorder = nil
+        let source = recordingSource
+        recordingControl?.close()
+        recordingControl = nil
+        NotificationCenter.default.post(name: CaptureStore.didChange, object: nil)
+        Task { @MainActor [self] in
+            do {
+                let poster = try await recorder.stop()
+                CaptureStore.shared.updateLatestRecording(recorder.url)
+                let capture = Capture(image: poster, sourceDescription: "Recording — \(source)",
+                                      fileURL: recorder.url, isRecording: true)
+                CaptureStore.shared.copyToPasteboard(capture)
+                CaptureStore.shared.record(capture)
+                Notifier.flashStatusItem()
+                if SettingsStore.shared.prefs.afterCapture == .clipboardFileAndEditor {
+                    openEditor(for: capture)
+                } else if SettingsStore.shared.prefs.showThumbnail {
+                    ThumbnailOverlayController.present(capture: capture) { [self] c in self.openEditor(for: c) }
+                }
+            } catch { Notifier.error(error) }
+            recordingFinishing = false
+            stopCompletions.forEach { $0() }
+            stopCompletions.removeAll()
+        }
     }
 
     private func performCapture(_ mode: CaptureMode) async {
@@ -277,6 +387,10 @@ final class CaptureCoordinator {
     // MARK: Editor
 
     func openEditor(for capture: Capture) {
+        if capture.isRecording {
+            openVideoEditor(for: capture)
+            return
+        }
         if let existing = editors.first(where: { $0.capture === capture }) {
             NSApp.activate(ignoringOtherApps: true)
             existing.showWindow(nil)
@@ -286,13 +400,45 @@ final class CaptureCoordinator {
         let controller = EditorWindowController(capture: capture)
         controller.onClose = { [weak self] c in
             self?.editors.removeAll { $0 === c }
-            if self?.editors.isEmpty == true { NSApp.setActivationPolicy(.accessory) }
+            if self?.editors.isEmpty == true && self?.videoEditors.isEmpty == true {
+                NSApp.setActivationPolicy(.accessory)
+            }
         }
         editors.append(controller)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func openVideoEditor(for capture: Capture) {
+        if let existing = videoEditors.first(where: { $0.capture === capture }) {
+            NSApp.activate(ignoringOtherApps: true)
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        guard let controller = VideoEditorWindowController(capture: capture) else { return }
+        controller.onClose = { [weak self] c in
+            self?.videoEditors.removeAll { $0 === c }
+            if self?.editors.isEmpty == true && self?.videoEditors.isEmpty == true {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+        videoEditors.append(controller)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    func openVideoFile(_ url: URL) {
+        let image = VideoEditExporter.poster(for: url)
+            ?? NSImage(systemSymbolName: "video", accessibilityDescription: "Recording")!
+        let capture = Capture(image: image, sourceDescription: url.lastPathComponent,
+                              fileURL: url, isRecording: true)
+        CaptureStore.shared.record(capture)
+        openEditor(for: capture)
     }
 
     func openEditorForLatest() {
