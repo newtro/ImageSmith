@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>ImageSmith</title>
+    <link>https://github.com/newtro/ImageSmith</link>
+    <description>ImageSmith updates</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.1.0</title>
+      <pubDate>Wed, 07 Oct 2026 19:56:40 GMT</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/newtro/ImageSmith/releases/tag/v1.1.0</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/newtro/ImageSmith/releases/download/v1.1.0/ImageSmith-1.1.0.zip" type="application/octet-stream" sparkle:edSignature="1ATnvtZ2o6hnsRR34JQApKbuhsuXD6R6HIABTACna77p62kJw6Gly3XYgjvZRHYvrelq/XugmiMY7piDxn3HDg==" length="2681291"/>
+    </item>
+  </channel>
+</rss>
