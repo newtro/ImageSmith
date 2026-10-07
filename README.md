@@ -144,9 +144,10 @@ soon as that push lands. `--draft` publishes a draft release without updating th
 feed.
 
 Updates are signed with an EdDSA key kept in the login keychain (account
-`imagesmith`, created with Sparkle's `generate_keys --account imagesmith`). Back it
-up with `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account imagesmith -x <file>`:
-without it, installed copies can't verify future updates.
+`imagesmith`, created with Sparkle's `generate_keys --account imagesmith`). It is
+backed up to `iCloud Drive/ImageSmith/sparkle-key.dmg`, an encrypted disk image
+protected by Scott's password; its README.txt has the restore command. Without the
+key, installed copies can't verify future updates.
 
 ## Build from source
 
