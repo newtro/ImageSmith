@@ -42,6 +42,10 @@ step() { print -P "%B==> $1%b" }
 cleanup() {
   # Leave only the zip and DMG: extra bundle copies with this bundle ID confuse
   # LaunchServices and TCC about which ImageSmith holds the Screen Recording grant.
+  # Xcode's export registers each intermediate copy with LaunchServices, and
+  # System Settings can then attach the Screen Recording grant to a stray copy.
+  local LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  find "$OUT" -name ImageSmith.app -type d -prune 2>/dev/null | while read -r app; do "$LSREG" -u "$app" 2>/dev/null || true; done
   rm -rf "$OUT/ImageSmith.xcarchive" "$OUT/upload" "$OUT/notarized" "$OUT/dmg"
   [[ -d "$SRC" ]] && git -C "$ROOT" worktree remove --force "$SRC" 2>/dev/null || true
 }

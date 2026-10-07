@@ -17,6 +17,7 @@ else
   echo "  Details: $LOG"
   echo "  macOS will ask for Screen Recording again when you next switch signatures."
 fi
+"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -u "$WORK/ImageSmith.xcarchive/Products/Applications/ImageSmith.app" 2>/dev/null || true
 rm -rf "$WORK"
 
 echo "▸ Installing to /Applications…"
