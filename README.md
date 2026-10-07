@@ -127,7 +127,7 @@ tools apply to screenshots.
 
 Download the latest `ImageSmith-x.y.z.dmg` from
 [Releases](https://github.com/newtro/ImageSmith/releases) and drag ImageSmith to
-Applications. After that it updates itself: Sparkle checks daily, and **Check for
+Applications (Apple Silicon, macOS 14+). After that it updates itself: Sparkle checks daily, and **Check for
 Updates…** in the menu-bar menu checks now and installs with one click.
 
 ## Releasing

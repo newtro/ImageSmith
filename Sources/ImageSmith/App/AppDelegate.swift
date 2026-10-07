@@ -34,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func checkForUpdates() { AppUpdater.shared.checkForUpdates() }
 
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item.action == #selector(checkForUpdates) ? AppUpdater.shared.isAvailable : true
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

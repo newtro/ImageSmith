@@ -3,6 +3,10 @@
 
   appcast.py appcast.xml --version 1.0.1 --build 57 --min-os 14.0 --url URL \
       --signature 'sparkle:edSignature="…" length="…"' --notes URL
+  appcast.py appcast.xml --check-build 57    # exit 1 unless 57 beats every build
+
+Sparkle offers an update only when its build number is higher than the installed
+one, so a lower or repeated build (e.g. after a history rewrite) is refused.
 """
 import argparse
 import email.utils
@@ -27,25 +31,40 @@ FOOTER = """  </channel>
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("appcast")
-    p.add_argument("--version", required=True)
-    p.add_argument("--build", required=True)
-    p.add_argument("--min-os", required=True)
-    p.add_argument("--url", required=True)
-    p.add_argument("--signature", required=True)
-    p.add_argument("--notes", required=True)
+    p.add_argument("--check-build")
+    p.add_argument("--version")
+    p.add_argument("--build")
+    p.add_argument("--min-os")
+    p.add_argument("--url")
+    p.add_argument("--signature")
+    p.add_argument("--notes")
     a = p.parse_args()
+
+    text = open(a.appcast, encoding="utf-8").read() if os.path.exists(a.appcast) else ""
+    builds = [int(b) for b in re.findall(r"<sparkle:version>(\d+)</sparkle:version>", text)]
+    newest = max(builds, default=0)
+
+    if a.check_build:
+        if int(a.check_build) <= newest:
+            sys.exit(f"Build {a.check_build} isn't higher than build {newest} already in {a.appcast}; "
+                     "installed copies would never be offered it.")
+        return
+
+    missing = [n for n in ("version", "build", "min_os", "url", "signature", "notes") if not getattr(a, n)]
+    if missing:
+        p.error("missing " + ", ".join("--" + n.replace("_", "-") for n in missing))
+    if int(a.build) <= newest:
+        sys.exit(f"Build {a.build} isn't higher than build {newest} already in {a.appcast}")
 
     sig = re.search(r'sparkle:edSignature="([^"]+)"', a.signature)
     length = re.search(r'length="(\d+)"', a.signature)
     if not sig or not length:
         sys.exit(f"Unexpected sign_update output: {a.signature!r}")
 
-    items = ""
-    if os.path.exists(a.appcast):
-        text = open(a.appcast, encoding="utf-8").read()
-        if f"<sparkle:version>{a.build}</sparkle:version>" in text:
-            sys.exit(f"Build {a.build} is already in {a.appcast}")
-        items = "".join(re.findall(r"    <item>.*?</item>\n", text, flags=re.S))
+    found = re.findall(r"[ \t]*<item>.*?</item>[ \t]*\n?", text, flags=re.S)
+    if len(found) != text.count("<item>"):
+        sys.exit(f"Couldn't read every <item> in {a.appcast}; fix it by hand first.")
+    items = "".join("    " + i.strip() + "\n" for i in found)
 
     item = f"""    <item>
       <title>Version {escape(a.version)}</title>
