@@ -4,6 +4,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 "$ROOT/Scripts/build-app.sh" release
 
+# Sign like a release so the Screen Recording grant carries over between local
+# installs and Sparkle updates. Offline, the 'ImageSmith Dev' signature stays.
+WORK="$ROOT/.dist/devid"
+if "$ROOT/Scripts/developer-id.sh" "$ROOT/.dist/ImageSmith.app" "$WORK" export 2>/dev/null; then
+  echo "▸ Signed with Developer ID"
+  rm -rf "$ROOT/.dist/ImageSmith.app"
+  mv "$WORK/export/ImageSmith.app" "$ROOT/.dist/ImageSmith.app"
+else
+  echo "▸ Developer ID signing unavailable (offline?); keeping the local signature."
+  echo "  macOS will ask for Screen Recording again when you next switch signatures."
+fi
+rm -rf "$WORK"
+
 echo "▸ Installing to /Applications…"
 pkill -x ImageSmith 2>/dev/null || true
 sleep 0.5
@@ -13,7 +26,7 @@ cp -R "$ROOT/.dist/ImageSmith.app" /Applications/
 # Only one copy of the bundle may be registered, or TCC matches the wrong one.
 LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 "$LSREG" -u "$ROOT/.dist/ImageSmith.app" 2>/dev/null || true
-rm -rf "$ROOT/.dist"
+rm -rf "$ROOT/.dist/ImageSmith.app"
 "$LSREG" -f /Applications/ImageSmith.app
 
 if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "ImageSmith Dev"; then

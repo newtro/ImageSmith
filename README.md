@@ -123,33 +123,53 @@ The source recording stays intact. Use **Open
 Recording…** from the menu bar to edit an existing movie. Still-image markup
 tools apply to screenshots.
 
-## Build and install
+## Install and updates
+
+Download the latest `ImageSmith-x.y.z.dmg` from
+[Releases](https://github.com/newtro/ImageSmith/releases) and drag ImageSmith to
+Applications. After that it updates itself: Sparkle checks daily, and **Check for
+Updates…** in the menu-bar menu checks now and installs with one click.
+
+## Releasing
+
+```bash
+Scripts/release.sh 1.2.0
+```
+
+From a clean, pushed `main`: runs the tests, builds with that version (the build
+number is the commit count), signs with Developer ID and notarizes through the
+Apple ID signed in to Xcode (Settings ▸ Accounts), then publishes a GitHub Release
+with a zip and a DMG and pushes `appcast.xml`. Installed copies see the update as
+soon as that push lands. `--draft` publishes a draft release without updating the
+feed.
+
+Updates are signed with an EdDSA key kept in the login keychain (account
+`imagesmith`, created with Sparkle's `generate_keys --account imagesmith`). Back it
+up with `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account imagesmith -x <file>`:
+without it, installed copies can't verify future updates.
+
+## Build from source
 
 ```bash
 Scripts/install.sh
 ```
 
-Builds, installs to `/Applications`, and launches. `Scripts/build-app.sh` alone
-produces `.dist/ImageSmith.app` without installing.
+Builds, signs with Developer ID (like a release, so permissions carry over),
+installs to `/Applications`, and launches. `Scripts/build-app.sh` alone produces
+`.dist/ImageSmith.app` without installing.
 
-Requires macOS 14+ and the Xcode command line tools. Run `swift test` for the unit
-tests covering the annotation geometry, the Retina-safe render pipeline, file
-naming and the double-tap window.
+Requires macOS 14+ and Xcode. Run `swift test` for the unit tests covering the
+annotation geometry, the Retina-safe render pipeline, file naming, the
+double-tap window and the video edit plan.
 
 ### Screen Recording permission
 
-macOS will ask once. If it asks *repeatedly*, that is the ad-hoc signature: an
-unsigned-in-the-eyes-of-TCC build gets a new code hash every time you rebuild, and
-the old approval stops matching. Two fixes:
-
-```bash
-Scripts/create-signing-identity.sh   # once — creates a stable self-signed identity
-```
-
-…after which rebuilds keep their permission. Without it, `Scripts/install.sh`
-clears the stale grant for you so you get a clean prompt instead of a silent
-failure. Keep only one copy of `ImageSmith.app` on disk — two copies sharing a
-bundle ID is the other cause of a permission loop.
+macOS asks once, and the grant is tied to the app's signature. Releases and
+`Scripts/install.sh` both sign with Developer ID, so updates and rebuilds keep it.
+If Xcode can't reach Apple (offline), `install.sh` falls back to a local
+signature and macOS will ask again; `Scripts/create-signing-identity.sh` creates
+that stable local identity. Keep only one copy of `ImageSmith.app` on disk: two
+copies sharing a bundle ID can also cause a permission loop.
 
 ## Layout
 

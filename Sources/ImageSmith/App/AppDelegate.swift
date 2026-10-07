@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in CaptureCoordinator.shared.handle(action) }
         }
         HotKeyManager.shared.start()
+        AppUpdater.shared.start()
 
         if !ScreenCapturer.hasPermission() {
             ScreenCapturer.requestPermission()
@@ -30,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showFirstRunNoticeIfNeeded()
         }
     }
+
+    @objc private func checkForUpdates() { AppUpdater.shared.checkForUpdates() }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
@@ -157,6 +160,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About ImageSmith",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let update = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        update.target = self
+        appMenu.addItem(update)
         appMenu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self

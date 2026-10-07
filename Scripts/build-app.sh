@@ -1,5 +1,7 @@
 #!/bin/bash
-# Builds ImageSmith.app from the Swift package and ad-hoc signs it.
+# Builds ImageSmith.app from the Swift package, embeds Sparkle and signs it.
+#   VERSION=1.2.0 Scripts/build-app.sh      # Scripts/release.sh sets VERSION
+# CFBundleVersion is the commit count, which Sparkle compares between releases.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -8,7 +10,11 @@ cd "$ROOT"
 CONFIG="${1:-release}"
 APP_NAME="ImageSmith"
 BUNDLE_ID="com.scottsmith.imagesmith"
-VERSION="1.0.0"
+VERSION="${VERSION:-$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null | sed 's/^v//' || true)}"
+VERSION="${VERSION:-1.0.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+FEED_URL="https://raw.githubusercontent.com/newtro/ImageSmith/main/appcast.xml"
+SPARKLE_PUBLIC_KEY="xk7w/R/7FgOg8zem9yYBlGXnT/DKE0IbC2eub9tPwV4="
 DIST="$ROOT/.dist"
 APP="$DIST/$APP_NAME.app"
 
@@ -18,8 +24,9 @@ BIN="$(swift build -c "$CONFIG" --show-bin-path)/$APP_NAME"
 
 echo "▸ Assembling bundle…"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
+ditto "$(dirname "$BIN")/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 
 if [ ! -f "$ROOT/Resources/AppIcon.icns" ]; then
   echo "▸ Rendering icon…"
@@ -41,7 +48,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleVersion</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+    <key>SUFeedURL</key><string>$FEED_URL</string>
+    <key>SUPublicEDKey</key><string>$SPARKLE_PUBLIC_KEY</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>86400</integer>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
@@ -71,6 +82,14 @@ else
   echo "▸ Signing (ad-hoc) — macOS will ask for Screen Recording again after this build."
   echo "  Run Scripts/create-signing-identity.sh once to stop that happening."
 fi
-codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" --timestamp=none "$APP" 2>/dev/null
+# Inside-out: Sparkle's helpers, the framework, then the app. Release builds
+# are re-signed with Developer ID and notarized by Scripts/release.sh.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+sign() { codesign --force --options runtime --timestamp=none --sign "$IDENTITY" "$@"; }
+for xpc in "$SPARKLE"/XPCServices/*.xpc; do sign "$xpc"; done
+sign "$SPARKLE/Autoupdate"
+sign "$SPARKLE/Updater.app"
+sign "$APP/Contents/Frameworks/Sparkle.framework"
+sign --identifier "$BUNDLE_ID" "$APP"
 
-echo "✓ Built $APP"
+echo "✓ Built $APP ($VERSION, build $BUILD_NUMBER)"

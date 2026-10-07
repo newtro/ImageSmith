@@ -121,6 +121,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        add(menu, "Check for Updates…", nil, enabled: AppUpdater.shared.isAvailable) {
+            AppUpdater.shared.checkForUpdates()
+        }
         add(menu, "About ImageSmith", nil) {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
