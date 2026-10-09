@@ -1,5 +1,11 @@
 import AppKit
 
+/// Borderless windows refuse key status by default, so a pin could never
+/// receive Esc and stayed stuck on screen.
+private final class PinnedWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 /// A floating, always-on-top copy of a capture — useful for keeping a reference
 /// visible while you type a prompt somewhere else.
 final class PinnedWindowController: NSWindowController {
@@ -9,11 +15,19 @@ final class PinnedWindowController: NSWindowController {
         let c = PinnedWindowController(image: image)
         pinned.append(c)
         c.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        c.window?.makeKeyAndOrderFront(nil)
     }
 
     static func closeAll() {
         pinned.forEach { $0.close() }
-        pinned.removeAll()
+    }
+
+    /// Drop the controller with its window, or every closed pin keeps its
+    /// full-resolution image alive until "Close All".
+    override func close() {
+        super.close()
+        Self.pinned.removeAll { $0 === self }
     }
 
     private let imageView = NSImageView()
@@ -22,7 +36,7 @@ final class PinnedWindowController: NSWindowController {
         let maxSide: CGFloat = 640
         let scale = min(1, maxSide / max(image.size.width, image.size.height))
         let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+        let window = PinnedWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.borderless, .resizable],
                               backing: .buffered, defer: false)
         window.level = .floating
@@ -51,8 +65,10 @@ final class PinnedWindowController: NSWindowController {
             if let png = ImageUtilities.pngData(from: image) { pb.setData(png, forType: .png) }
         }
         container.addSubview(imageView)
+        container.addCloseButton()
         container.autoresizingMask = [.width, .height]
         window.contentView = container
+        window.initialFirstResponder = container
         window.center()
     }
 
@@ -62,6 +78,39 @@ final class PinnedWindowController: NSWindowController {
 private final class PinnedContainerView: NSView {
     var onClose: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+
+    private let closeButton = NSButton()
+    private var trackingArea: NSTrackingArea?
+
+    /// A close control that appears on hover, so a pin can be dismissed without
+    /// knowing about Esc or the context menu.
+    func addCloseButton() {
+        let image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")?
+            .withSymbolConfiguration(.init(pointSize: 18, weight: .regular)
+                .applying(.init(paletteColors: [.white, NSColor.black.withAlphaComponent(0.6)])))
+        closeButton.image = image
+        closeButton.isBordered = false
+        closeButton.imagePosition = .imageOnly
+        closeButton.target = self
+        closeButton.action = #selector(closeWindow)
+        closeButton.toolTip = "Close (esc)"
+        closeButton.frame = NSRect(x: 6, y: bounds.height - 28, width: 22, height: 22)
+        closeButton.autoresizingMask = [.maxXMargin, .minYMargin]
+        closeButton.isHidden = true
+        addSubview(closeButton)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { closeButton.isHidden = false }
+    override func mouseExited(with event: NSEvent) { closeButton.isHidden = true }
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { onDoubleClick?() }
