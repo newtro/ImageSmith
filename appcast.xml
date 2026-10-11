@@ -6,6 +6,15 @@
     <description>ImageSmith updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.1.3</title>
+      <pubDate>Sun, 11 Oct 2026 03:41:02 GMT</pubDate>
+      <sparkle:version>14</sparkle:version>
+      <sparkle:shortVersionString>1.1.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/newtro/ImageSmith/releases/tag/v1.1.3</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/newtro/ImageSmith/releases/download/v1.1.3/ImageSmith-1.1.3.zip" type="application/octet-stream" sparkle:edSignature="TAy4zYuusX59iEdV7W0JbzFUa92PrIfiI5pHGXt+MRz5mfRsgPLbWhvKWsdoxt3fs7drdj7bt/r2SVudl22jCg==" length="2686530"/>
+    </item>
+    <item>
       <title>Version 1.1.2</title>
       <pubDate>Fri, 09 Oct 2026 00:24:24 GMT</pubDate>
       <sparkle:version>12</sparkle:version>
