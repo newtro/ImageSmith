@@ -121,10 +121,50 @@ actor ScreenCapturer {
     }
 
     func captureWindow(_ info: WindowInfo, scale: CGFloat, showsCursor: Bool) async throws -> CGImage {
+        if let composite = try await captureWindowWithMenus(info, scale: scale, showsCursor: showsCursor) {
+            return composite
+        }
         let filter = SCContentFilter(desktopIndependentWindow: info.scWindow)
         let config = configuration(width: Int(info.frame.width * scale),
                                    height: Int(info.frame.height * scale),
                                    showsCursor: showsCursor)
+        do {
+            return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        } catch {
+            throw CaptureError.failed(error.localizedDescription)
+        }
+    }
+
+    /// An open context or pull-down menu is its own window, so a single-window
+    /// capture leaves it out. When menus overlap the target window, render the
+    /// window and those menus together, cropped to their combined bounds, with
+    /// everything else on the display left transparent. Returns nil when no
+    /// menu is open over the window.
+    private func captureWindowWithMenus(_ info: WindowInfo, scale: CGFloat, showsCursor: Bool) async throws -> CGImage? {
+        let content = try await shareableContent()
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let menus = content.windows.filter { w in
+            w.isOnScreen
+                && w.windowLayer == Int(CGWindowLevelForKey(.popUpMenuWindow))
+                && w.owningApplication?.processID != ownPID
+                && w.frame.intersects(info.frame)
+        }
+        guard !menus.isEmpty,
+              let window = content.windows.first(where: { $0.windowID == info.id }) else { return nil }
+
+        // A window spanning displays can't be composited from one display, so it
+        // keeps the plain single-window capture.
+        guard let display = content.displays.first(where: { $0.frame.contains(window.frame) }) else { return nil }
+
+        let bounds = menus.reduce(window.frame) { $0.union($1.frame) }.intersection(display.frame)
+        guard !bounds.isNull, bounds.width >= 1, bounds.height >= 1 else { return nil }
+
+        let filter = SCContentFilter(display: display, including: [window] + menus)
+        let config = configuration(width: Int(bounds.width * scale),
+                                   height: Int(bounds.height * scale),
+                                   showsCursor: showsCursor)
+        config.sourceRect = bounds.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+        config.backgroundColor = .clear
         do {
             return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         } catch {
