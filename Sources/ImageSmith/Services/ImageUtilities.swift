@@ -27,6 +27,19 @@ enum ScreenGeometry {
         NSScreen.screens.first { $0.frame.contains(cocoaPoint) } ?? NSScreen.main
     }
 
+    /// The screen showing most of a CG-space rect — the one whose backing scale a
+    /// window on it is rendered at, wherever the pointer happens to be.
+    static func screen(mostlyShowing cgRect: CGRect) -> NSScreen? {
+        let rect = cocoaRect(fromCG: cgRect)
+        func overlap(_ s: NSScreen) -> CGFloat {
+            let r = s.frame.intersection(rect)
+            return r.isNull ? 0 : r.width * r.height
+        }
+        guard let best = NSScreen.screens.max(by: { overlap($0) < overlap($1) }),
+              overlap(best) > 0 else { return NSScreen.main }
+        return best
+    }
+
     static func displayID(of screen: NSScreen) -> CGDirectDisplayID {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
             ?? CGMainDisplayID()

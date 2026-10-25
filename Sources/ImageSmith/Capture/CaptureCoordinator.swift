@@ -114,8 +114,7 @@ final class CaptureCoordinator {
                     }
                 } else if mode == .frontWindow {
                     let info = try await ScreenCapturer.shared.frontmostWindow()
-                    let screen = NSScreen.screens.first(where: { $0.frame.intersects(ScreenGeometry.cocoaRect(fromCG: info.frame)) })
-                        ?? NSScreen.main!
+                    let screen = ScreenGeometry.screen(mostlyShowing: info.frame) ?? NSScreen.main!
                     await beginRecording(.window(info, screen.backingScaleFactor),
                                          source: info.title.isEmpty ? info.appName : "\(info.appName) — \(info.title)")
                 } else {
@@ -208,7 +207,9 @@ final class CaptureCoordinator {
 
             case .frontWindow:
                 let info = try await ScreenCapturer.shared.frontmostWindow()
-                let screen = ScreenGeometry.screen(containing: NSEvent.mouseLocation) ?? NSScreen.main!
+                // Render at the scale of the display the window is on; the pointer's
+                // display may differ, and with scalesToFit off that crops or pads it.
+                let screen = ScreenGeometry.screen(mostlyShowing: info.frame) ?? NSScreen.main!
                 let cg = try await ScreenCapturer.shared.captureWindow(
                     info, scale: screen.backingScaleFactor,
                     showsCursor: SettingsStore.shared.prefs.includeCursor)
